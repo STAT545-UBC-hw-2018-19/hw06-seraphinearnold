@@ -1,0 +1,196 @@
+---
+title: "hw06-seraphinearnold"
+output: html_notebook
+---
+
+# Purrr Tutorial
+
+See https://jennybc.github.io/purrr-tutorial/ls08_trump-tweets.html 
+
+Load Libraries:
+
+```{r}
+library(purrr)
+suppressMessages(library(dplyr))
+library(tibble)
+```
+
+Loading the Trump Twitter Data:
+
+```{r}
+load(url("http://varianceexplained.org/files/trump_tweets_df.rda"))
+#load("trump_tweets_df.rda")
+glimpse(trump_tweets_df)
+```
+
+
+```{r}
+tweets <- trump_tweets_df$text
+tweets %>% 
+  head() %>%
+  strtrim(70)
+```
+
+Significant Trump words we are looking for:
+
+```{r}
+regex <- "badly|crazy|weak|spent|strong|dumb|joke|guns|funny|dead"
+```
+
+
+Some preselected rows with the complexity that is wanted:
+
+```{r}
+tweets <- tweets[c(1, 2, 5, 6, 198, 347, 919)]
+tweets %>% strtrim(70)
+```
+
+Looking for the significant Trump words in the chosen rows/tweets using `gregexpr()`to deal with an awkward list:
+
+
+```{r}
+matches <- gregexpr(regex, tweets)
+str(matches)
+```
+
+```{r}
+matches [[7]]
+```
+
+
+How long are the elements of matches:
+
+```{r}
+lengths(matches)                      # just happens to exist for length
+
+sapply(matches, length)               # NSFP = not safe for programming
+
+vapply(matches, length, integer(1))   # preferred base approach
+
+map_int(matches, length)              # purrr way
+```
+
+
+Three ways to get a list of match lengths (one exercised):
+
+```{r}
+# ml <- function(x) attr(x, which = "match.length")
+# map(matches, ml)
+
+# map(matches, ~ attr(.x, which = "match.length"))
+
+(match_length <- map(matches, attr, which = "match.length"))
+
+```
+
+How many Trump words appear in each Tweet?
+Example on two Tweets, 1 and 7:
+
+```{r}
+m <- matches[[1]]
+sum(m > 0)
+
+m <- matches[[7]]
+sum(m > 0)
+```
+
+Inserted to a function:
+
+```{r}
+f <- function(x) sum(x > 0)
+map(matches, f)
+```
+
+The `map_int()` function returns vectors of the corresponding type:
+
+```{r}
+map_int(matches, ~ sum(.x > 0))
+```
+
+SO this is indeed different from just taking the lengths of the elements of matches, as can be seen below:
+
+```{r}
+tibble(
+  naive_length = lengths(matches),
+  n_words = map_int(matches, ~ sum(.x > 0))
+)
+```
+
+To remove the attributes from the elements of matches, so there is less clutter when printed, the `as.vector()`, which attempts to coerce its argument into a vector of mode, will be helpful:
+
+
+```{r}
+(match_first <- map(matches, as.vector))
+```
+
+
+Small exapmle to see the difference:
+
+```{r}
+tweets %>% strtrim(70)
+match_first
+match_length
+```
+
+
+
+As proposed, I will start with tweet #7, that contains 3 Trump words.
+
+
+```{r}
+(tweet <- tweets[7])
+(t_first <- match_first[[7]])
+(t_length <- match_length[[7]])
+(t_last <- t_first + t_length - 1)
+```
+
+```{r}
+substring(tweet, t_first, t_last)
+```
+
+
+How well does this code work for tweet #1, with 0 Trump words?
+
+```{r}
+(tweet <- tweets[1])
+(t_first <- match_first[[1]])
+(t_length <- match_length[[1]])
+(t_last <- t_first + t_length - 1)
+substring(tweet, t_first, t_last)
+```
+
+This doesn't make too much sense, because obviously there are none of the words we look for in this Tweet.
+
+
+How to store where Trump's words end?
+
+```{r}
+(match_last <- map2(match_first, match_length, ~ .x + .y - 1))
+```
+
+```{r}
+pmap(list(text = tweets, first = match_first, last = match_last), substring)
+```
+
+Another option would have been to create a dataframe and work with that. This has the advantage that it is tidier and safer. 
+
+```{r}
+mdf <- tibble(
+  text = tweets,
+  first = match_first,
+  last = match_last
+)
+pmap(mdf, substring)
+```
+
+
+
+```{r}
+tibble(text = tweets,
+       first = gregexpr(regex, tweets)) %>% 
+  mutate(match_length = map(first, ~ attr(.x, which = "match.length")),
+         last = map2(first, match_length, ~ .x + .y - 1)) %>%
+  select(-match_length) %>% 
+  pmap(substring)
+```
+
